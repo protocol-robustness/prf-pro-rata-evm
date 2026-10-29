@@ -188,6 +188,72 @@ contract SettlementTestToken is IProRataSettlementToken {
                 require(settlement.operation(OP).outstandingLiability == 10, "substitution rejection changed liability");
             }
 
+            function test_ChainInstanceOperationAndAllocationBindingSubstitutionReject() external {
+                _assertContextSubstitutionRejected(0); // chain-instance genesis root
+                _assertContextSubstitutionRejected(1); // operation ID
+                _assertContextSubstitutionRejected(2); // allocation binding root
+            }
+
+            function test_EntitlementAndPolicySubstitutionReject() external {
+                _assertContextSubstitutionRejected(3); // entitlement index
+                _assertContextSubstitutionRejected(4); // claim identity
+                _assertContextSubstitutionRejected(5); // beneficiary
+                _assertContextSubstitutionRejected(6); // amount
+                _assertContextSubstitutionRejected(7); // policy profile
+            }
+
+            function testProofFloorAndProfileSubstitutionReject() external {
+                _assertContextSubstitutionRejected(8); // immutable proof-mode floor
+                _assertContextSubstitutionRejected(9); // profile domain
+            }
+
+            function testLegacySourceBoundV2ClaimRootCannotAuthorizeCandidateWithdrawal() external {
+                SettlementTestToken token = new SettlementTestToken();
+                SettlementTestModeSource source = new SettlementTestModeSource();
+                ProRataEntitlementSettlementV2 settlement =
+                    new ProRataEntitlementSettlementV2(address(this), CHAIN_INSTANCE_GENESIS_ROOT, source);
+                bytes32 tableRoot = _tableRoot(address(settlement), address(token), block.chainid, 1);
+                bytes32 legacyClaimLeaf = keccak256(
+                    abi.encode(
+                        keccak256("prf.source-bound-entitlement.claim-leaf.v1"),
+                        BINDING,
+                        OP,
+                        uint256(0),
+                        keccak256(abi.encodePacked(bytes1(0x20), bytes1(uint8(bytes("claim-a").length)), bytes("claim-a"))),
+                        BENEFICIARY,
+                        uint256(10),
+                        keccak256("immutable-address-v1")
+                    )
+                );
+                settlement.createOperation(
+                    OP,
+                    BINDING,
+                    tableRoot,
+                    legacyClaimLeaf,
+                    POLICY,
+                    token,
+                    10,
+                    1,
+                    ProRataEntitlementSettlementV2.ProofMode.Required
+                );
+                token.mint(address(this), 10);
+                token.approve(address(settlement), 10);
+                settlement.fund(OP);
+                settlement.activate(OP);
+
+                bytes32[] memory empty = new bytes32[](0);
+                (bool accepted,) = address(settlement)
+                    .call(
+                        abi.encodeCall(
+                            ProRataEntitlementSettlementV2.withdraw,
+                            (OP, _opening(), empty, true, empty, ProRataEntitlementSettlementV2.ProofMode.Requested)
+                        )
+                    );
+                require(!accepted, "legacy V2 claim root authorized candidate withdrawal");
+                require(token.balanceOf(BENEFICIARY) == 0, "legacy proof substitution paid");
+                require(settlement.operation(OP).outstandingLiability == 10, "legacy proof changed liability");
+            }
+
             function test_ExactTransferFailureRollsBackAndAllowsRetry() external {
                 (SettlementTestToken token,, ProRataEntitlementSettlementV2 settlement) =
                     _createScenario(0, 0, address(0), block.chainid);
@@ -263,6 +329,76 @@ contract SettlementTestToken is IProRataSettlementToken {
                 require(token.balanceOf(BENEFICIARY) == 0, "substitution rejection paid");
             }
 
+            function _assertContextSubstitutionRejected(uint8 field) private {
+                SettlementTestToken token = new SettlementTestToken();
+                SettlementTestModeSource source = new SettlementTestModeSource();
+                ProRataEntitlementSettlementV2 settlement =
+                    new ProRataEntitlementSettlementV2(address(this), CHAIN_INSTANCE_GENESIS_ROOT, source);
+
+                bytes32 genesisRoot = CHAIN_INSTANCE_GENESIS_ROOT;
+                address asset = address(token);
+                uint256 chainId = block.chainid;
+                bytes32 operationId = OP;
+                bytes32 bindingRoot = BINDING;
+                ProRataEntitlementSettlementV2.Opening memory rootOpening = _opening();
+                bytes32 policy = POLICY;
+                uint8 proofFloor = 1;
+                bytes32 profile = keccak256("prf.pro-rata-entitlement.deployment-scoped.v2");
+
+                if (field == 0) genesisRoot = bytes32(uint256(CHAIN_INSTANCE_GENESIS_ROOT) ^ 1);
+                else if (field == 1) operationId = bytes32(uint256(OP) ^ 1);
+                else if (field == 2) bindingRoot = bytes32(uint256(BINDING) ^ 1);
+                else if (field == 3) rootOpening.index = 1;
+                else if (field == 4) rootOpening.claimIdentity = bytes32(uint256(IDENTITY) ^ 1);
+                else if (field == 5) rootOpening.beneficiary = address(0x9999);
+                else if (field == 6) rootOpening.amount = 9;
+                else if (field == 7) policy = bytes32(uint256(POLICY) ^ 1);
+                else if (field == 8) proofFloor = 0;
+                else if (field == 9) profile = keccak256("prf.source-bound-entitlement.claim-leaf.v1");
+                else revert("unknown substitution field");
+
+                bytes32 tableRoot = _candidateTableRoot(
+                    profile,
+                    address(settlement),
+                    asset,
+                    chainId,
+                    genesisRoot,
+                    operationId,
+                    bindingRoot,
+                    rootOpening,
+                    policy,
+                    proofFloor
+                );
+                bytes32 claimRoot = _claimRoot(address(settlement), asset, chainId, 1);
+                settlement.createOperation(
+                    OP,
+                    BINDING,
+                    tableRoot,
+                    claimRoot,
+                    POLICY,
+                    token,
+                    10,
+                    1,
+                    ProRataEntitlementSettlementV2.ProofMode.Required
+                );
+                token.mint(address(this), 10);
+                token.approve(address(settlement), 10);
+                settlement.fund(OP);
+                settlement.activate(OP);
+
+                bytes32[] memory empty = new bytes32[](0);
+                (bool accepted,) = address(settlement)
+                    .call(
+                        abi.encodeCall(
+                            ProRataEntitlementSettlementV2.withdraw,
+                            (OP, _opening(), empty, true, empty, ProRataEntitlementSettlementV2.ProofMode.Requested)
+                        )
+                    );
+                require(!accepted, "substituted commitment field accepted");
+                require(token.balanceOf(BENEFICIARY) == 0, "substitution rejection paid");
+                require(settlement.operation(OP).outstandingLiability == 10, "substitution changed liability");
+            }
+
             function _createScenario(uint8 floor, uint8 live, address leafToken, uint256 leafChainId)
                 private
                 returns (
@@ -300,23 +436,49 @@ contract SettlementTestToken is IProRataSettlementToken {
                 pure
                 returns (bytes32)
             {
+                return _candidateTableRoot(
+                    keccak256("prf.pro-rata-entitlement.deployment-scoped.v2"),
+                    allocator,
+                    token,
+                    chainId,
+                    CHAIN_INSTANCE_GENESIS_ROOT,
+                    OP,
+                    BINDING,
+                    _opening(),
+                    POLICY,
+                    floor
+                );
+            }
+
+            function _candidateTableRoot(
+                bytes32 profile,
+                address allocator,
+                address token,
+                uint256 chainId,
+                bytes32 genesisRoot,
+                bytes32 operationId,
+                bytes32 bindingRoot,
+                ProRataEntitlementSettlementV2.Opening memory opening,
+                bytes32 policy,
+                uint8 floor
+            ) private pure returns (bytes32) {
                 bytes32 leaf = keccak256(
                     abi.encode(
-                        keccak256("prf.pro-rata-entitlement.deployment-scoped.v2"),
+                        profile,
                         keccak256("prf.pro-rata-entitlement.table-leaf.v2"),
                         chainId,
-                        CHAIN_INSTANCE_GENESIS_ROOT,
+                        genesisRoot,
                         allocator,
                         token,
-                        OP,
-                        BINDING,
-                        uint256(0),
-                        IDENTITY,
-                        BENEFICIARY,
-                        uint256(10),
-                        POLICY,
+                        operationId,
+                        bindingRoot,
+                        opening.index,
+                        opening.claimIdentity,
+                        opening.beneficiary,
+                        opening.amount,
+                        policy,
                         floor,
-                        SALT
+                        opening.salt
                     )
                 );
                 return
