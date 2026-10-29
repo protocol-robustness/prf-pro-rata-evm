@@ -1,0 +1,28 @@
+{
+  "status": "candidate-not-adopted",
+  "profile": "prf.pro-rata-entitlement.deployment-scoped.v2",
+  "hash": "keccak256(abi.encode)",
+  "inputs": {
+    "chain_id": 31337,
+    "chain_instance_identity": "0x88c4d0ca7ce42120b8059a6a4f894be3a8d8c563e5d228b5fd067932fe2aad73",
+    "allocator": "0x0000000000000000000000000000000000001234",
+    "asset": "0x0000000000000000000000000000000000005678",
+    "operation_id": "0x1f1cfe8670c20aaace011af83ca6696c433437a1fe08af3412db149a98fdc6c1",
+    "allocation_binding_root": "0xbf72d0df6058ca6da6bf46e03cf78ed718bf7e03e2f49d8e64cb3c3785e0da54",
+    "entitlement_index": 0,
+    "claim_identity": "0xb5b9fbfeb4ea45a3fe9adf25ea127be5e7d97c8b8bf77a300eb7ef9fee0497a8",
+    "beneficiary": "0x000000000000000000000000000000000000beef",
+    "amount_base_units": 10,
+    "policy_profile": "0x1eee74b6e0eb61d2f7b766be3491edd29ce887787d198db66e185c0137875766",
+    "immutable_minimum_proof_mode": 1,
+    "opening_salt": "0xc94c761414b92ee4452953aaa8e6fa42924b5ab41d558d94078be987aceebc92"
+  },
+  "expected": {
+    "entitlement_leaf": "0x67b2ce08d579937ae2dbd296094602dc5f42486f3dcda4362e609b85812fb2da",
+    "entitlement_table_root": "0x111dd3c7306bd17fbd9c924dde090f235d791bf893091262d483f08677958057",
+    "allocation_claim_leaf": "0x0488e43e0477c131a94e0502dafe92ccc1122e0c97d06b6e941a4d07a666f878",
+    "allocation_claim_root": "0x97673b87e79f3ba61da9bb3b9afedcff339552318ff14270b271661f7f2cb6ac"
+  },
+  "reproduction": "cast abi-encode followed by cast keccak; see README.md and test/ProRataEntitlementSettlementV2.t.sol",
+  "qualification_note": "Do not consume as canonical until prf-pro-rata-allocation independently implements and approves the same profile and vectors."
+}
