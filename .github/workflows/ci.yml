@@ -1,0 +1,27 @@
+name: Solidity CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  foundry:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+      - uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: v1.7.1
+      - name: Check formatting
+        run: forge fmt --check
+      - name: Build contracts
+        run: forge build --sizes
+      - name: Run tests
+        run: forge test -vvv

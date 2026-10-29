@@ -5,6 +5,11 @@ import {ProRataEntitlementSettlementV2} from "../src/ProRataEntitlementSettlemen
 import {IProRataSettlementToken} from "../src/IProRataSettlementToken.sol";
 import {IProRataProofModeSource} from "../src/IProRataProofModeSource.sol";
 
+interface Vm {
+    function readFile(string calldata path) external view returns (string memory data);
+    function parseJsonBytes32(string calldata json, string calldata key) external pure returns (bytes32 value);
+}
+
 contract SettlementTestToken is IProRataSettlementToken {
     mapping(address => uint256) public override balanceOf;
     mapping(address => mapping(address => uint256)) public allowance;
@@ -57,6 +62,7 @@ contract SettlementTestToken is IProRataSettlementToken {
     }
 
         contract ProRataEntitlementSettlementV2Test {
+            Vm private constant VM = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
             bytes32 private constant CHAIN_INSTANCE = keccak256("fixture-chain-instance");
             bytes32 private constant OP = keccak256("operation");
             bytes32 private constant BINDING = keccak256("allocation-binding");
@@ -75,6 +81,20 @@ contract SettlementTestToken is IProRataSettlementToken {
                     _claimRoot(address(0x1234), address(0x5678), 31337, 1)
                         == 0x97673b87e79f3ba61da9bb3b9afedcff339552318ff14270b271661f7f2cb6ac,
                     "candidate claim root changed"
+                );
+            }
+
+            function testCandidateMachineReadableVectorMatchesGoldenRoots() external view {
+                string memory vector = VM.readFile("fixtures/deployment-scoped-entitlement-v2.candidate.json");
+                require(
+                    _tableRoot(address(0x1234), address(0x5678), 31337, 1)
+                        == VM.parseJsonBytes32(vector, ".expected.entitlement_table_root"),
+                    "fixture table root differs"
+                );
+                require(
+                    _claimRoot(address(0x1234), address(0x5678), 31337, 1)
+                        == VM.parseJsonBytes32(vector, ".expected.allocation_claim_root"),
+                    "fixture claim root differs"
                 );
             }
 
