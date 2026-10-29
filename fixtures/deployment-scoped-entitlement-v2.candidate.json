@@ -4,7 +4,7 @@
   "hash": "keccak256(abi.encode)",
   "inputs": {
     "chain_id": 31337,
-    "chain_instance_identity": "0x88c4d0ca7ce42120b8059a6a4f894be3a8d8c563e5d228b5fd067932fe2aad73",
+    "chain_instance_genesis_root": "0x88c4d0ca7ce42120b8059a6a4f894be3a8d8c563e5d228b5fd067932fe2aad73",
     "allocator": "0x0000000000000000000000000000000000001234",
     "asset": "0x0000000000000000000000000000000000005678",
     "operation_id": "0x1f1cfe8670c20aaace011af83ca6696c433437a1fe08af3412db149a98fdc6c1",

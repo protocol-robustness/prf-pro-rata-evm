@@ -28,7 +28,7 @@ The entitlement table proves membership in a committed table; it does not prove 
 - exact sender/recipient token-delta checks and retry after transfer failure;
 - a live governed proof mode and caller minimum that may strengthen, but cannot weaken, the operation's stored minimum.
 
-The candidate leaf binds the profile version, `block.chainid`, the supplied chain-instance identity, `address(this)`, token address, operation and allocation roots, entitlement index and identity, beneficiary, amount, policy profile, and immutable minimum proof mode. The table opening additionally binds its salt. The chain-instance value is an opaque constructor input; this contract does not authenticate that value. The integrating deployment/evidence profile must independently establish its provenance.
+The candidate leaf binds the profile version, `block.chainid`, the PRF `chain-instance-genesis.v1` root, `address(this)`, token address, operation and allocation roots, entitlement index and identity, beneficiary, amount, policy profile, and immutable minimum proof mode. The table opening additionally binds its salt. The genesis root is an opaque constructor input; this contract does not authenticate it. The integrating deployment/evidence profile must independently derive it and verify it against the sealed genesis contract.
 
 The initial implementation has no proxy support, reserve, proof registry, or governance engine. Withdrawals remain publicly observable: beneficiary, amount, calldata opening and timing are not private.
 

@@ -62,7 +62,8 @@ contract ProRataEntitlementSettlementV2 {
     }
 
     address public immutable operationAuthority;
-    bytes32 public immutable chainInstanceIdentity;
+    /// @notice PRF chain-instance-genesis.v1 root; its provenance is checked by the deployment adapter.
+    bytes32 public immutable chainInstanceGenesisRoot;
     IProRataProofModeSource public immutable proofModeSource;
 
     mapping(bytes32 operationId => Operation) private _operations;
@@ -118,13 +119,15 @@ contract ProRataEntitlementSettlementV2 {
         _entered = false;
     }
 
-    constructor(address authority, bytes32 chainInstanceIdentity_, IProRataProofModeSource proofModeSource_) {
-        if (authority == address(0) || chainInstanceIdentity_ == bytes32(0) || address(proofModeSource_) == address(0))
-        {
+    constructor(address authority, bytes32 chainInstanceGenesisRoot_, IProRataProofModeSource proofModeSource_) {
+        if (
+            authority == address(0) || chainInstanceGenesisRoot_ == bytes32(0)
+                || address(proofModeSource_) == address(0)
+        ) {
             revert InvalidOperation();
         }
         operationAuthority = authority;
-        chainInstanceIdentity = chainInstanceIdentity_;
+        chainInstanceGenesisRoot = chainInstanceGenesisRoot_;
         proofModeSource = proofModeSource_;
     }
 
@@ -294,7 +297,7 @@ contract ProRataEntitlementSettlementV2 {
                 PROFILE_ID,
                 TABLE_LEAF_DOMAIN,
                 block.chainid,
-                chainInstanceIdentity,
+                chainInstanceGenesisRoot,
                 address(this),
                 address(op.token),
                 operationId,
@@ -320,7 +323,7 @@ contract ProRataEntitlementSettlementV2 {
                 PROFILE_ID,
                 CLAIM_LEAF_DOMAIN,
                 block.chainid,
-                chainInstanceIdentity,
+                chainInstanceGenesisRoot,
                 address(this),
                 address(op.token),
                 operationId,

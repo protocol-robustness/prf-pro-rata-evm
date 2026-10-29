@@ -63,7 +63,8 @@ contract SettlementTestToken is IProRataSettlementToken {
 
         contract ProRataEntitlementSettlementV2Test {
             Vm private constant VM = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
-            bytes32 private constant CHAIN_INSTANCE = keccak256("fixture-chain-instance");
+            bytes32 private constant CHAIN_INSTANCE_GENESIS_ROOT =
+                0x88c4d0ca7ce42120b8059a6a4f894be3a8d8c563e5d228b5fd067932fe2aad73;
             bytes32 private constant OP = keccak256("operation");
             bytes32 private constant BINDING = keccak256("allocation-binding");
             bytes32 private constant POLICY = keccak256("policy-profile-v2");
@@ -156,7 +157,7 @@ contract SettlementTestToken is IProRataSettlementToken {
                 SettlementTestToken substitutedAsset = new SettlementTestToken();
                 SettlementTestModeSource source = new SettlementTestModeSource();
                 ProRataEntitlementSettlementV2 settlement =
-                    new ProRataEntitlementSettlementV2(address(this), CHAIN_INSTANCE, source);
+                    new ProRataEntitlementSettlementV2(address(this), CHAIN_INSTANCE_GENESIS_ROOT, source);
                 bytes32 tableRoot = _tableRoot(address(settlement), address(substitutedAsset), block.chainid, 0);
                 bytes32 claimRoot = _claimRoot(address(settlement), address(substitutedAsset), block.chainid, 0);
                 settlement.createOperation(
@@ -231,7 +232,7 @@ contract SettlementTestToken is IProRataSettlementToken {
                 SettlementTestToken token = new SettlementTestToken();
                 SettlementTestModeSource source = new SettlementTestModeSource();
                 ProRataEntitlementSettlementV2 settlement =
-                    new ProRataEntitlementSettlementV2(address(this), CHAIN_INSTANCE, source);
+                    new ProRataEntitlementSettlementV2(address(this), CHAIN_INSTANCE_GENESIS_ROOT, source);
                 address leafAllocator = allocatorForRoot == address(0) ? address(settlement) : allocatorForRoot;
                 bytes32 tableRoot = _tableRoot(leafAllocator, address(token), chainIdForRoot, 0);
                 bytes32 claimRoot = _claimRoot(leafAllocator, address(token), chainIdForRoot, 0);
@@ -273,7 +274,7 @@ contract SettlementTestToken is IProRataSettlementToken {
                 token = new SettlementTestToken();
                 source = new SettlementTestModeSource();
                 source.setMode(live);
-                settlement = new ProRataEntitlementSettlementV2(address(this), CHAIN_INSTANCE, source);
+                settlement = new ProRataEntitlementSettlementV2(address(this), CHAIN_INSTANCE_GENESIS_ROOT, source);
                 address tokenIdentity = leafToken == address(0) ? address(token) : leafToken;
                 bytes32 tableRoot = _tableRoot(address(settlement), tokenIdentity, leafChainId, floor);
                 bytes32 claimRoot = _claimRoot(address(settlement), tokenIdentity, leafChainId, floor);
@@ -304,7 +305,7 @@ contract SettlementTestToken is IProRataSettlementToken {
                         keccak256("prf.pro-rata-entitlement.deployment-scoped.v2"),
                         keccak256("prf.pro-rata-entitlement.table-leaf.v2"),
                         chainId,
-                        CHAIN_INSTANCE,
+                        CHAIN_INSTANCE_GENESIS_ROOT,
                         allocator,
                         token,
                         OP,
@@ -334,7 +335,7 @@ contract SettlementTestToken is IProRataSettlementToken {
                         keccak256("prf.pro-rata-entitlement.deployment-scoped.v2"),
                         keccak256("prf.pro-rata-entitlement.claim-leaf.v2"),
                         chainId,
-                        CHAIN_INSTANCE,
+                        CHAIN_INSTANCE_GENESIS_ROOT,
                         allocator,
                         token,
                         OP,
