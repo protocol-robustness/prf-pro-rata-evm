@@ -3,10 +3,11 @@ pragma solidity ^0.8.33;
 
 import {IProRataSettlementToken} from "./IProRataSettlementToken.sol";
 import {IProRataProofModeSource} from "./IProRataProofModeSource.sol";
+import {IPrfChainInstanceGenesis} from "./IPrfChainInstanceGenesis.sol";
 
 /// @notice Independent, non-upgradeable entitlement custody and withdrawal profile.
-/// @dev The deployment-scoped commitment layout in this implementation is a candidate
-///      pending matching canonical vectors from prf-pro-rata-allocation.
+/// @dev The deployment-scoped commitment layout and sealed-genesis binding are candidates;
+///      matching vectors do not constitute semantic adoption or deployment qualification.
 contract ProRataEntitlementSettlementV2 {
     bytes32 public constant PROFILE_ID = keccak256("prf.pro-rata-entitlement.deployment-scoped.v2");
     bytes32 public constant TABLE_LEAF_DOMAIN = keccak256("prf.pro-rata-entitlement.table-leaf.v2");
@@ -62,7 +63,9 @@ contract ProRataEntitlementSettlementV2 {
     }
 
     address public immutable operationAuthority;
-    /// @notice PRF chain-instance-genesis.v1 root; its provenance is checked by the deployment adapter.
+    /// @notice Sealed PRF genesis contract whose root and runtime identity were checked at construction.
+    IPrfChainInstanceGenesis public immutable genesisAnchor;
+    /// @notice Root read from the sealed anchor and matched to the independently derived expected root.
     bytes32 public immutable chainInstanceGenesisRoot;
     IProRataProofModeSource public immutable proofModeSource;
 
@@ -84,6 +87,11 @@ contract ProRataEntitlementSettlementV2 {
     error ExactTransferRequired();
     error LiabilityExceeded();
     error ReentrantCall();
+    error InvalidGenesisAnchor();
+    error GenesisNotSealed();
+    error GenesisRootMismatch(bytes32 expected, bytes32 observed);
+    error GenesisExecutionChainMismatch(uint256 expected, uint256 observed);
+    error GenesisRuntimeCodeHashMismatch(bytes32 expected, bytes32 observed);
 
     event OperationCreated(
         bytes32 indexed operationId,
@@ -119,15 +127,34 @@ contract ProRataEntitlementSettlementV2 {
         _entered = false;
     }
 
-    constructor(address authority, bytes32 chainInstanceGenesisRoot_, IProRataProofModeSource proofModeSource_) {
-        if (
-            authority == address(0) || chainInstanceGenesisRoot_ == bytes32(0)
-                || address(proofModeSource_) == address(0)
-        ) {
+    constructor(
+        address authority,
+        IPrfChainInstanceGenesis genesisAnchor_,
+        bytes32 expectedChainInstanceGenesisRoot,
+        IProRataProofModeSource proofModeSource_
+    ) {
+        if (authority == address(0) || address(genesisAnchor_) == address(0) || address(proofModeSource_) == address(0))
+        {
             revert InvalidOperation();
         }
+        if (address(genesisAnchor_).code.length == 0) revert InvalidGenesisAnchor();
+        if (!genesisAnchor_.isSealedState()) revert GenesisNotSealed();
+        bytes32 observedGenesisRoot = genesisAnchor_.chainInstanceGenesisRoot();
+        if (expectedChainInstanceGenesisRoot == bytes32(0) || observedGenesisRoot != expectedChainInstanceGenesisRoot) {
+            revert GenesisRootMismatch(expectedChainInstanceGenesisRoot, observedGenesisRoot);
+        }
+        uint256 observedExecutionChainId = genesisAnchor_.executionChainId();
+        if (observedExecutionChainId != block.chainid) {
+            revert GenesisExecutionChainMismatch(block.chainid, observedExecutionChainId);
+        }
+        bytes32 observedGenesisCodeHash = genesisAnchor_.genesisRuntimeCodeHash();
+        bytes32 actualGenesisCodeHash = address(genesisAnchor_).codehash;
+        if (observedGenesisCodeHash == bytes32(0) || observedGenesisCodeHash != actualGenesisCodeHash) {
+            revert GenesisRuntimeCodeHashMismatch(observedGenesisCodeHash, actualGenesisCodeHash);
+        }
         operationAuthority = authority;
-        chainInstanceGenesisRoot = chainInstanceGenesisRoot_;
+        genesisAnchor = genesisAnchor_;
+        chainInstanceGenesisRoot = observedGenesisRoot;
         proofModeSource = proofModeSource_;
     }
 

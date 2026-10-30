@@ -4,6 +4,7 @@ pragma solidity ^0.8.33;
 import {ProRataEntitlementSettlementV2} from "../src/ProRataEntitlementSettlementV2.sol";
 import {IProRataSettlementToken} from "../src/IProRataSettlementToken.sol";
 import {IProRataProofModeSource} from "../src/IProRataProofModeSource.sol";
+import {IPrfChainInstanceGenesis} from "../src/IPrfChainInstanceGenesis.sol";
 
 interface Vm {
     function readFile(string calldata path) external view returns (string memory data);
@@ -11,6 +12,8 @@ interface Vm {
     function parseJsonAddress(string calldata json, string calldata key) external pure returns (address value);
     function parseJsonUint(string calldata json, string calldata key) external pure returns (uint256 value);
     function toString(uint256 value) external pure returns (string memory result);
+    function expectRevert(bytes4 revertData) external;
+    function expectRevert(bytes calldata revertData) external;
 }
 
 contract SettlementTestToken is IProRataSettlementToken {
@@ -63,6 +66,36 @@ contract SettlementTestToken is IProRataSettlementToken {
             currentEntitlementProofMode = mode;
         }
     }
+
+        contract SettlementTestGenesisAnchor is IPrfChainInstanceGenesis {
+            bytes32 private immutable _root;
+            uint256 private immutable _executionChainId;
+            bool private immutable _sealed;
+            bool private immutable _runtimeHashMismatch;
+
+            constructor(bytes32 root, uint256 executionChainId_, bool sealed_, bool runtimeHashMismatch_) {
+                _root = root;
+                _executionChainId = executionChainId_;
+                _sealed = sealed_;
+                _runtimeHashMismatch = runtimeHashMismatch_;
+            }
+
+            function chainInstanceGenesisRoot() external view override returns (bytes32) {
+                return _root;
+            }
+
+            function executionChainId() external view override returns (uint256) {
+                return _executionChainId;
+            }
+
+            function genesisRuntimeCodeHash() external view override returns (bytes32) {
+                return _runtimeHashMismatch ? bytes32(uint256(1)) : address(this).codehash;
+            }
+
+            function isSealedState() external view override returns (bool) {
+                return _sealed;
+            }
+        }
 
         contract ProRataEntitlementSettlementV2Test {
             Vm private constant VM = Vm(address(uint160(uint256(keccak256("hevm cheat code")))));
@@ -196,6 +229,129 @@ contract SettlementTestToken is IProRataSettlementToken {
                 );
             }
 
+            function testSettlementUsesTheSealedGenesisRootForCommitments() external {
+                bytes32 checkedRoot = keccak256("checked genesis candidate test root");
+                SettlementTestModeSource source = new SettlementTestModeSource();
+                SettlementTestGenesisAnchor anchor = new SettlementTestGenesisAnchor(
+                    checkedRoot, block.chainid, true, false
+                );
+                ProRataEntitlementSettlementV2 settlement =
+                    new ProRataEntitlementSettlementV2(address(this), anchor, checkedRoot, source);
+
+                require(address(settlement.genesisAnchor()) == address(anchor), "genesis anchor not retained");
+                require(
+                    settlement.chainInstanceGenesisRoot() == anchor.chainInstanceGenesisRoot(),
+                    "commitment root was not read from sealed genesis"
+                );
+                require(settlement.chainInstanceGenesisRoot() == checkedRoot, "checked canonical root changed");
+
+                SettlementTestToken token = new SettlementTestToken();
+                ProRataEntitlementSettlementV2.Opening memory opening = _opening();
+                bytes32 tableRoot = _candidateTableRoot(
+                    keccak256("prf.pro-rata-entitlement.deployment-scoped.v2"),
+                    address(settlement),
+                    address(token),
+                    block.chainid,
+                    settlement.chainInstanceGenesisRoot(),
+                    OP,
+                    BINDING,
+                    opening,
+                    POLICY,
+                    0
+                );
+                bytes32 claimRoot = _candidateClaimRoot(
+                    address(settlement),
+                    address(token),
+                    block.chainid,
+                    settlement.chainInstanceGenesisRoot(),
+                    0,
+                    opening
+                );
+                settlement.createOperation(
+                    OP,
+                    BINDING,
+                    tableRoot,
+                    claimRoot,
+                    POLICY,
+                    token,
+                    10,
+                    1,
+                    ProRataEntitlementSettlementV2.ProofMode.Requested
+                );
+                token.mint(address(this), 10);
+                token.approve(address(settlement), 10);
+                settlement.fund(OP);
+                settlement.activate(OP);
+                bytes32[] memory noSiblings = new bytes32[](0);
+                settlement.withdraw(
+                    OP, opening, noSiblings, false, noSiblings, ProRataEntitlementSettlementV2.ProofMode.Requested
+                );
+                require(token.balanceOf(BENEFICIARY) == 10, "operation did not use the checked root");
+                require(settlement.operation(OP).outstandingLiability == 0, "checked-root liability remained");
+            }
+
+            function testSettlementRejectsUnsealedOrSubstitutedGenesis() external {
+                SettlementTestModeSource source = new SettlementTestModeSource();
+                SettlementTestGenesisAnchor unsealed =
+                    new SettlementTestGenesisAnchor(CHAIN_INSTANCE_GENESIS_ROOT, block.chainid, false, false);
+                VM.expectRevert(ProRataEntitlementSettlementV2.GenesisNotSealed.selector);
+                new ProRataEntitlementSettlementV2(address(this), unsealed, CHAIN_INSTANCE_GENESIS_ROOT, source);
+
+                SettlementTestGenesisAnchor sealedAnchor =
+                    new SettlementTestGenesisAnchor(CHAIN_INSTANCE_GENESIS_ROOT, block.chainid, true, false);
+                VM.expectRevert(
+                    abi.encodeWithSelector(
+                        ProRataEntitlementSettlementV2.GenesisRootMismatch.selector,
+                        bytes32(uint256(CHAIN_INSTANCE_GENESIS_ROOT) ^ 1),
+                        CHAIN_INSTANCE_GENESIS_ROOT
+                    )
+                );
+                new ProRataEntitlementSettlementV2(
+                    address(this), sealedAnchor, bytes32(uint256(CHAIN_INSTANCE_GENESIS_ROOT) ^ 1), source
+                );
+
+                SettlementTestGenesisAnchor wrongChain =
+                    new SettlementTestGenesisAnchor(CHAIN_INSTANCE_GENESIS_ROOT, block.chainid + 1, true, false);
+                VM.expectRevert(
+                    abi.encodeWithSelector(
+                        ProRataEntitlementSettlementV2.GenesisExecutionChainMismatch.selector,
+                        block.chainid,
+                        block.chainid + 1
+                    )
+                );
+                new ProRataEntitlementSettlementV2(address(this), wrongChain, CHAIN_INSTANCE_GENESIS_ROOT, source);
+
+                SettlementTestGenesisAnchor wrongCode =
+                    new SettlementTestGenesisAnchor(CHAIN_INSTANCE_GENESIS_ROOT, block.chainid, true, true);
+                VM.expectRevert(
+                    abi.encodeWithSelector(
+                        ProRataEntitlementSettlementV2.GenesisRuntimeCodeHashMismatch.selector,
+                        bytes32(uint256(1)),
+                        address(wrongCode).codehash
+                    )
+                );
+                new ProRataEntitlementSettlementV2(address(this), wrongCode, CHAIN_INSTANCE_GENESIS_ROOT, source);
+            }
+
+            function testSettlementRejectsMissingGenesisCodeAndZeroExpectedRoot() external {
+                SettlementTestModeSource source = new SettlementTestModeSource();
+                VM.expectRevert(ProRataEntitlementSettlementV2.InvalidGenesisAnchor.selector);
+                new ProRataEntitlementSettlementV2(
+                    address(this), IPrfChainInstanceGenesis(address(0xdead)), CHAIN_INSTANCE_GENESIS_ROOT, source
+                );
+
+                SettlementTestGenesisAnchor anchor =
+                    new SettlementTestGenesisAnchor(CHAIN_INSTANCE_GENESIS_ROOT, block.chainid, true, false);
+                VM.expectRevert(
+                    abi.encodeWithSelector(
+                        ProRataEntitlementSettlementV2.GenesisRootMismatch.selector,
+                        bytes32(0),
+                        CHAIN_INSTANCE_GENESIS_ROOT
+                    )
+                );
+                new ProRataEntitlementSettlementV2(address(this), anchor, bytes32(0), source);
+            }
+
             function _fixtureLeaf(string memory vector, uint256 index, bool table) private pure returns (bytes32) {
                 string memory opening = string.concat(".odd_width.openings[", VM.toString(index), "]");
                 bytes32 profile = keccak256("prf.pro-rata-entitlement.deployment-scoped.v2");
@@ -300,8 +456,7 @@ contract SettlementTestToken is IProRataSettlementToken {
                 SettlementTestToken token = new SettlementTestToken();
                 SettlementTestToken substitutedAsset = new SettlementTestToken();
                 SettlementTestModeSource source = new SettlementTestModeSource();
-                ProRataEntitlementSettlementV2 settlement =
-                    new ProRataEntitlementSettlementV2(address(this), CHAIN_INSTANCE_GENESIS_ROOT, source);
+                ProRataEntitlementSettlementV2 settlement = _newSettlement(source);
                 bytes32 tableRoot = _tableRoot(address(settlement), address(substitutedAsset), block.chainid, 0);
                 bytes32 claimRoot = _claimRoot(address(settlement), address(substitutedAsset), block.chainid, 0);
                 settlement.createOperation(
@@ -354,8 +509,7 @@ contract SettlementTestToken is IProRataSettlementToken {
             function testLegacySourceBoundV2ClaimRootCannotAuthorizeCandidateWithdrawal() external {
                 SettlementTestToken token = new SettlementTestToken();
                 SettlementTestModeSource source = new SettlementTestModeSource();
-                ProRataEntitlementSettlementV2 settlement =
-                    new ProRataEntitlementSettlementV2(address(this), CHAIN_INSTANCE_GENESIS_ROOT, source);
+                ProRataEntitlementSettlementV2 settlement = _newSettlement(source);
                 bytes32 tableRoot = _tableRoot(address(settlement), address(token), block.chainid, 1);
                 bytes32 legacyClaimLeaf = keccak256(
                     abi.encode(
@@ -403,8 +557,7 @@ contract SettlementTestToken is IProRataSettlementToken {
             function testOddWidthMerkleProofRequiresDuplicateLastSiblingAndPays() external {
                 SettlementTestToken token = new SettlementTestToken();
                 SettlementTestModeSource source = new SettlementTestModeSource();
-                ProRataEntitlementSettlementV2 settlement =
-                    new ProRataEntitlementSettlementV2(address(this), CHAIN_INSTANCE_GENESIS_ROOT, source);
+                ProRataEntitlementSettlementV2 settlement = _newSettlement(source);
                 bytes32 operationId = keccak256("odd-width-operation");
                 ProRataEntitlementSettlementV2.Opening[] memory openings = new ProRataEntitlementSettlementV2
                     .Opening[](3);
@@ -534,8 +687,7 @@ contract SettlementTestToken is IProRataSettlementToken {
             function _assertSubstitutionRejected(address allocatorForRoot, uint256 chainIdForRoot) private {
                 SettlementTestToken token = new SettlementTestToken();
                 SettlementTestModeSource source = new SettlementTestModeSource();
-                ProRataEntitlementSettlementV2 settlement =
-                    new ProRataEntitlementSettlementV2(address(this), CHAIN_INSTANCE_GENESIS_ROOT, source);
+                ProRataEntitlementSettlementV2 settlement = _newSettlement(source);
                 address leafAllocator = allocatorForRoot == address(0) ? address(settlement) : allocatorForRoot;
                 bytes32 tableRoot = _tableRoot(leafAllocator, address(token), chainIdForRoot, 0);
                 bytes32 claimRoot = _claimRoot(leafAllocator, address(token), chainIdForRoot, 0);
@@ -569,8 +721,7 @@ contract SettlementTestToken is IProRataSettlementToken {
             function _assertContextSubstitutionRejected(uint8 field) private {
                 SettlementTestToken token = new SettlementTestToken();
                 SettlementTestModeSource source = new SettlementTestModeSource();
-                ProRataEntitlementSettlementV2 settlement =
-                    new ProRataEntitlementSettlementV2(address(this), CHAIN_INSTANCE_GENESIS_ROOT, source);
+                ProRataEntitlementSettlementV2 settlement = _newSettlement(source);
 
                 bytes32 genesisRoot = CHAIN_INSTANCE_GENESIS_ROOT;
                 address asset = address(token);
@@ -647,7 +798,7 @@ contract SettlementTestToken is IProRataSettlementToken {
                 token = new SettlementTestToken();
                 source = new SettlementTestModeSource();
                 source.setMode(live);
-                settlement = new ProRataEntitlementSettlementV2(address(this), CHAIN_INSTANCE_GENESIS_ROOT, source);
+                settlement = _newSettlement(source);
                 address tokenIdentity = leafToken == address(0) ? address(token) : leafToken;
                 bytes32 tableRoot = _tableRoot(address(settlement), tokenIdentity, leafChainId, floor);
                 bytes32 claimRoot = _claimRoot(address(settlement), tokenIdentity, leafChainId, floor);
@@ -662,6 +813,12 @@ contract SettlementTestToken is IProRataSettlementToken {
                     1,
                     ProRataEntitlementSettlementV2.ProofMode(floor)
                 );
+            }
+
+            function _newSettlement(SettlementTestModeSource source) private returns (ProRataEntitlementSettlementV2) {
+                SettlementTestGenesisAnchor anchor =
+                    new SettlementTestGenesisAnchor(CHAIN_INSTANCE_GENESIS_ROOT, block.chainid, true, false);
+                return new ProRataEntitlementSettlementV2(address(this), anchor, CHAIN_INSTANCE_GENESIS_ROOT, source);
             }
 
             function _opening() private pure returns (ProRataEntitlementSettlementV2.Opening memory) {
@@ -789,20 +946,31 @@ contract SettlementTestToken is IProRataSettlementToken {
                 pure
                 returns (bytes32)
             {
+                return _candidateClaimRoot(allocator, token, chainId, CHAIN_INSTANCE_GENESIS_ROOT, floor, _opening());
+            }
+
+            function _candidateClaimRoot(
+                address allocator,
+                address token,
+                uint256 chainId,
+                bytes32 genesisRoot,
+                uint8 floor,
+                ProRataEntitlementSettlementV2.Opening memory opening
+            ) private pure returns (bytes32) {
                 bytes32 leaf = keccak256(
                     abi.encode(
                         keccak256("prf.pro-rata-entitlement.deployment-scoped.v2"),
                         keccak256("prf.pro-rata-entitlement.claim-leaf.v2"),
                         chainId,
-                        CHAIN_INSTANCE_GENESIS_ROOT,
+                        genesisRoot,
                         allocator,
                         token,
                         OP,
                         BINDING,
-                        uint256(0),
-                        IDENTITY,
-                        BENEFICIARY,
-                        uint256(10),
+                        opening.index,
+                        opening.claimIdentity,
+                        opening.beneficiary,
+                        opening.amount,
                         POLICY,
                         floor
                     )
