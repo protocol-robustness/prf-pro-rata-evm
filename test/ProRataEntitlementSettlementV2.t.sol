@@ -70,6 +70,10 @@ contract SettlementTestToken is IProRataSettlementToken {
             bytes32 private constant POLICY = keccak256("policy-profile-v2");
             bytes32 private constant IDENTITY = keccak256("claim-identity");
             bytes32 private constant SALT = keccak256("opening-salt");
+            bytes32 private constant TABLE_NODE_DOMAIN = keccak256("prf.pro-rata-entitlement.table-node.v2");
+            bytes32 private constant TABLE_ROOT_DOMAIN = keccak256("prf.pro-rata-entitlement.table-root.v2");
+            bytes32 private constant CLAIM_NODE_DOMAIN = keccak256("prf.pro-rata-entitlement.claim-node.v2");
+            bytes32 private constant CLAIM_ROOT_DOMAIN = keccak256("prf.pro-rata-entitlement.claim-root.v2");
             address private constant BENEFICIARY = address(0xBEEF);
 
             function testCandidateGoldenRootsMatchIndependentCastEncoding() external pure {
@@ -219,7 +223,9 @@ contract SettlementTestToken is IProRataSettlementToken {
                         BINDING,
                         OP,
                         uint256(0),
-                        keccak256(abi.encodePacked(bytes1(0x20), bytes1(uint8(bytes("claim-a").length)), bytes("claim-a"))),
+                        keccak256(
+                            abi.encodePacked(bytes1(0x20), bytes1(uint8(bytes("claim-a").length)), bytes("claim-a"))
+                        ),
                         BENEFICIARY,
                         uint256(10),
                         keccak256("immutable-address-v1")
@@ -252,6 +258,97 @@ contract SettlementTestToken is IProRataSettlementToken {
                 require(!accepted, "legacy V2 claim root authorized candidate withdrawal");
                 require(token.balanceOf(BENEFICIARY) == 0, "legacy proof substitution paid");
                 require(settlement.operation(OP).outstandingLiability == 10, "legacy proof changed liability");
+            }
+
+            function testOddWidthMerkleProofRequiresDuplicateLastSiblingAndPays() external {
+                SettlementTestToken token = new SettlementTestToken();
+                SettlementTestModeSource source = new SettlementTestModeSource();
+                ProRataEntitlementSettlementV2 settlement =
+                    new ProRataEntitlementSettlementV2(address(this), CHAIN_INSTANCE_GENESIS_ROOT, source);
+                bytes32 operationId = keccak256("odd-width-operation");
+                ProRataEntitlementSettlementV2.Opening[] memory openings = new ProRataEntitlementSettlementV2
+                    .Opening[](3);
+                openings[0] =
+                    ProRataEntitlementSettlementV2.Opening(
+                    0, keccak256("claim-0"), address(0xA001), 4, keccak256("salt-0")
+                );
+                openings[1] =
+                    ProRataEntitlementSettlementV2.Opening(
+                    1, keccak256("claim-1"), address(0xA002), 3, keccak256("salt-1")
+                );
+                openings[2] =
+                    ProRataEntitlementSettlementV2.Opening(
+                    2, keccak256("claim-2"), address(0xA003), 3, keccak256("salt-2")
+                );
+
+                bytes32[] memory tableLeaves = new bytes32[](3);
+                bytes32[] memory claimLeaves = new bytes32[](3);
+                for (uint256 i; i < openings.length; ++i) {
+                    tableLeaves[i] = _tableLeaf(settlement, token, operationId, BINDING, POLICY, 1, openings[i]);
+                    claimLeaves[i] = _claimLeaf(settlement, token, operationId, BINDING, POLICY, 1, openings[i]);
+                }
+                bytes32 tablePair = _node(TABLE_NODE_DOMAIN, tableLeaves[0], tableLeaves[1]);
+                bytes32 tableOdd = _node(TABLE_NODE_DOMAIN, tableLeaves[2], tableLeaves[2]);
+                bytes32 tableMembersRoot = _node(TABLE_NODE_DOMAIN, tablePair, tableOdd);
+                bytes32 tableRoot = keccak256(abi.encode(TABLE_ROOT_DOMAIN, tableMembersRoot, uint256(3), uint256(10)));
+                bytes32 claimPair = _node(CLAIM_NODE_DOMAIN, claimLeaves[0], claimLeaves[1]);
+                bytes32 claimOdd = _node(CLAIM_NODE_DOMAIN, claimLeaves[2], claimLeaves[2]);
+                bytes32 claimMembersRoot = _node(CLAIM_NODE_DOMAIN, claimPair, claimOdd);
+                bytes32 claimRoot = keccak256(abi.encode(CLAIM_ROOT_DOMAIN, claimMembersRoot, uint256(3), uint256(10)));
+
+                settlement.createOperation(
+                    operationId,
+                    BINDING,
+                    tableRoot,
+                    claimRoot,
+                    POLICY,
+                    token,
+                    10,
+                    3,
+                    ProRataEntitlementSettlementV2.ProofMode.Required
+                );
+                token.mint(address(this), 10);
+                token.approve(address(settlement), 10);
+                settlement.fund(operationId);
+                settlement.activate(operationId);
+
+                bytes32[] memory tableSiblings = new bytes32[](2);
+                tableSiblings[0] = tableLeaves[2]; // duplicate the odd-width final leaf
+                tableSiblings[1] = tablePair;
+                bytes32[] memory claimSiblings = new bytes32[](2);
+                claimSiblings[0] = claimLeaves[2];
+                claimSiblings[1] = claimPair;
+
+                tableSiblings[0] = tableLeaves[0]; // a non-duplicate sibling must fail closed
+                (bool badProofAccepted,) = address(settlement)
+                    .call(
+                        abi.encodeCall(
+                            ProRataEntitlementSettlementV2.withdraw,
+                            (
+                                operationId,
+                                openings[2],
+                                tableSiblings,
+                                true,
+                                claimSiblings,
+                                ProRataEntitlementSettlementV2.ProofMode.Requested
+                            )
+                        )
+                    );
+                require(!badProofAccepted, "incorrect odd-width duplicate accepted");
+                require(token.balanceOf(openings[2].beneficiary) == 0, "invalid odd-width proof paid");
+                require(settlement.operation(operationId).outstandingLiability == 10, "invalid proof changed liability");
+
+                tableSiblings[0] = tableLeaves[2];
+                settlement.withdraw(
+                    operationId,
+                    openings[2],
+                    tableSiblings,
+                    true,
+                    claimSiblings,
+                    ProRataEntitlementSettlementV2.ProofMode.Requested
+                );
+                require(token.balanceOf(openings[2].beneficiary) == 3, "valid odd-width proof did not pay");
+                require(settlement.operation(operationId).outstandingLiability == 7, "valid proof liability mismatch");
             }
 
             function test_ExactTransferFailureRollsBackAndAllowsRetry() external {
@@ -481,10 +578,70 @@ contract SettlementTestToken is IProRataSettlementToken {
                         opening.salt
                     )
                 );
-                return
-                    keccak256(
-                        abi.encode(keccak256("prf.pro-rata-entitlement.table-root.v2"), leaf, uint256(1), uint256(10))
-                    );
+                return keccak256(abi.encode(TABLE_ROOT_DOMAIN, leaf, uint256(1), uint256(10)));
+            }
+
+            function _tableLeaf(
+                ProRataEntitlementSettlementV2 settlement,
+                SettlementTestToken token,
+                bytes32 operationId,
+                bytes32 bindingRoot,
+                bytes32 policy,
+                uint8 proofFloor,
+                ProRataEntitlementSettlementV2.Opening memory opening
+            ) private view returns (bytes32) {
+                return keccak256(
+                    abi.encode(
+                        keccak256("prf.pro-rata-entitlement.deployment-scoped.v2"),
+                        keccak256("prf.pro-rata-entitlement.table-leaf.v2"),
+                        block.chainid,
+                        CHAIN_INSTANCE_GENESIS_ROOT,
+                        address(settlement),
+                        address(token),
+                        operationId,
+                        bindingRoot,
+                        opening.index,
+                        opening.claimIdentity,
+                        opening.beneficiary,
+                        opening.amount,
+                        policy,
+                        proofFloor,
+                        opening.salt
+                    )
+                );
+            }
+
+            function _claimLeaf(
+                ProRataEntitlementSettlementV2 settlement,
+                SettlementTestToken token,
+                bytes32 operationId,
+                bytes32 bindingRoot,
+                bytes32 policy,
+                uint8 proofFloor,
+                ProRataEntitlementSettlementV2.Opening memory opening
+            ) private view returns (bytes32) {
+                return keccak256(
+                    abi.encode(
+                        keccak256("prf.pro-rata-entitlement.deployment-scoped.v2"),
+                        keccak256("prf.pro-rata-entitlement.claim-leaf.v2"),
+                        block.chainid,
+                        CHAIN_INSTANCE_GENESIS_ROOT,
+                        address(settlement),
+                        address(token),
+                        operationId,
+                        bindingRoot,
+                        opening.index,
+                        opening.claimIdentity,
+                        opening.beneficiary,
+                        opening.amount,
+                        policy,
+                        proofFloor
+                    )
+                );
+            }
+
+            function _node(bytes32 domain, bytes32 left, bytes32 right) private pure returns (bytes32) {
+                return keccak256(abi.encodePacked(domain, left, right));
             }
 
             function _claimRoot(address allocator, address token, uint256 chainId, uint8 floor)
