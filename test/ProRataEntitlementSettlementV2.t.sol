@@ -8,6 +8,9 @@ import {IProRataProofModeSource} from "../src/IProRataProofModeSource.sol";
 interface Vm {
     function readFile(string calldata path) external view returns (string memory data);
     function parseJsonBytes32(string calldata json, string calldata key) external pure returns (bytes32 value);
+    function parseJsonAddress(string calldata json, string calldata key) external pure returns (address value);
+    function parseJsonUint(string calldata json, string calldata key) external pure returns (uint256 value);
+    function toString(uint256 value) external pure returns (string memory result);
 }
 
 contract SettlementTestToken is IProRataSettlementToken {
@@ -100,6 +103,143 @@ contract SettlementTestToken is IProRataSettlementToken {
                     _claimRoot(address(0x1234), address(0x5678), 31337, 1)
                         == VM.parseJsonBytes32(vector, ".expected.allocation_claim_root"),
                     "fixture claim root differs"
+                );
+            }
+
+            function testCandidateOddWidthGoldenVectorMatchesSharedFixture() external view {
+                string memory vector = VM.readFile("fixtures/deployment-scoped-entitlement-v2.candidate.json");
+                bytes32[] memory tableLeaves = new bytes32[](3);
+                bytes32[] memory claimLeaves = new bytes32[](3);
+                for (uint256 i; i < 3; ++i) {
+                    tableLeaves[i] = _fixtureLeaf(vector, i, true);
+                    claimLeaves[i] = _fixtureLeaf(vector, i, false);
+                    string memory suffix = string.concat("[", VM.toString(i), "]");
+                    require(
+                        tableLeaves[i]
+                            == VM.parseJsonBytes32(
+                                vector, string.concat(".odd_width.expected.entitlement_leaves", suffix)
+                            ),
+                        "table leaf differs"
+                    );
+                    require(
+                        claimLeaves[i]
+                            == VM.parseJsonBytes32(
+                                vector, string.concat(".odd_width.expected.allocation_claim_leaves", suffix)
+                            ),
+                        "claim leaf differs"
+                    );
+                }
+
+                bytes32 tablePair = _node(TABLE_NODE_DOMAIN, tableLeaves[0], tableLeaves[1]);
+                bytes32 tableDuplicate = _node(TABLE_NODE_DOMAIN, tableLeaves[2], tableLeaves[2]);
+                bytes32 tableMembers = _node(TABLE_NODE_DOMAIN, tablePair, tableDuplicate);
+                bytes32 claimPair = _node(CLAIM_NODE_DOMAIN, claimLeaves[0], claimLeaves[1]);
+                bytes32 claimDuplicate = _node(CLAIM_NODE_DOMAIN, claimLeaves[2], claimLeaves[2]);
+                bytes32 claimMembers = _node(CLAIM_NODE_DOMAIN, claimPair, claimDuplicate);
+                uint256 count = VM.parseJsonUint(vector, ".odd_width.count");
+                uint256 total = VM.parseJsonUint(vector, ".odd_width.total_amount_base_units");
+                bytes32 tableRoot = keccak256(abi.encode(TABLE_ROOT_DOMAIN, tableMembers, count, total));
+                bytes32 claimRoot = keccak256(abi.encode(CLAIM_ROOT_DOMAIN, claimMembers, count, total));
+
+                require(
+                    tablePair == VM.parseJsonBytes32(vector, ".odd_width.expected.entitlement_pair_01"),
+                    "table pair differs"
+                );
+                require(
+                    tableDuplicate
+                        == VM.parseJsonBytes32(vector, ".odd_width.expected.entitlement_duplicate_last_node"),
+                    "table duplicate-last differs"
+                );
+                require(
+                    tableMembers == VM.parseJsonBytes32(vector, ".odd_width.expected.entitlement_members_root"),
+                    "table members root differs"
+                );
+                require(
+                    tableRoot == VM.parseJsonBytes32(vector, ".odd_width.expected.entitlement_table_root"),
+                    "table root differs"
+                );
+                require(
+                    claimPair == VM.parseJsonBytes32(vector, ".odd_width.expected.allocation_claim_pair_01"),
+                    "claim pair differs"
+                );
+                require(
+                    claimDuplicate
+                        == VM.parseJsonBytes32(vector, ".odd_width.expected.allocation_claim_duplicate_last_node"),
+                    "claim duplicate-last differs"
+                );
+                require(
+                    claimMembers == VM.parseJsonBytes32(vector, ".odd_width.expected.allocation_claim_members_root"),
+                    "claim members root differs"
+                );
+                require(
+                    claimRoot == VM.parseJsonBytes32(vector, ".odd_width.expected.allocation_claim_root"),
+                    "claim root differs"
+                );
+                require(
+                    tableLeaves[2]
+                        == VM.parseJsonBytes32(vector, ".odd_width.expected.index_2_entitlement_siblings[0]"),
+                    "table sibling zero differs"
+                );
+                require(
+                    tablePair == VM.parseJsonBytes32(vector, ".odd_width.expected.index_2_entitlement_siblings[1]"),
+                    "table sibling one differs"
+                );
+                require(
+                    claimLeaves[2]
+                        == VM.parseJsonBytes32(vector, ".odd_width.expected.index_2_allocation_claim_siblings[0]"),
+                    "claim sibling zero differs"
+                );
+                require(
+                    claimPair
+                        == VM.parseJsonBytes32(vector, ".odd_width.expected.index_2_allocation_claim_siblings[1]"),
+                    "claim sibling one differs"
+                );
+            }
+
+            function _fixtureLeaf(string memory vector, uint256 index, bool table) private pure returns (bytes32) {
+                string memory opening = string.concat(".odd_width.openings[", VM.toString(index), "]");
+                bytes32 profile = keccak256("prf.pro-rata-entitlement.deployment-scoped.v2");
+                bytes32 leafDomain = table
+                    ? keccak256("prf.pro-rata-entitlement.table-leaf.v2")
+                    : keccak256("prf.pro-rata-entitlement.claim-leaf.v2");
+                if (table) {
+                    return keccak256(
+                        abi.encode(
+                            profile,
+                            leafDomain,
+                            VM.parseJsonUint(vector, ".inputs.chain_id"),
+                            VM.parseJsonBytes32(vector, ".inputs.chain_instance_genesis_root"),
+                            VM.parseJsonAddress(vector, ".inputs.allocator"),
+                            VM.parseJsonAddress(vector, ".inputs.asset"),
+                            VM.parseJsonBytes32(vector, ".inputs.operation_id"),
+                            VM.parseJsonBytes32(vector, ".inputs.allocation_binding_root"),
+                            VM.parseJsonUint(vector, string.concat(opening, ".index")),
+                            VM.parseJsonBytes32(vector, string.concat(opening, ".claim_identity")),
+                            VM.parseJsonAddress(vector, string.concat(opening, ".beneficiary")),
+                            VM.parseJsonUint(vector, string.concat(opening, ".amount_base_units")),
+                            VM.parseJsonBytes32(vector, ".inputs.policy_profile"),
+                            VM.parseJsonUint(vector, ".inputs.immutable_minimum_proof_mode"),
+                            VM.parseJsonBytes32(vector, string.concat(opening, ".opening_salt"))
+                        )
+                    );
+                }
+                return keccak256(
+                    abi.encode(
+                        profile,
+                        leafDomain,
+                        VM.parseJsonUint(vector, ".inputs.chain_id"),
+                        VM.parseJsonBytes32(vector, ".inputs.chain_instance_genesis_root"),
+                        VM.parseJsonAddress(vector, ".inputs.allocator"),
+                        VM.parseJsonAddress(vector, ".inputs.asset"),
+                        VM.parseJsonBytes32(vector, ".inputs.operation_id"),
+                        VM.parseJsonBytes32(vector, ".inputs.allocation_binding_root"),
+                        VM.parseJsonUint(vector, string.concat(opening, ".index")),
+                        VM.parseJsonBytes32(vector, string.concat(opening, ".claim_identity")),
+                        VM.parseJsonAddress(vector, string.concat(opening, ".beneficiary")),
+                        VM.parseJsonUint(vector, string.concat(opening, ".amount_base_units")),
+                        VM.parseJsonBytes32(vector, ".inputs.policy_profile"),
+                        VM.parseJsonUint(vector, ".inputs.immutable_minimum_proof_mode")
+                    )
                 );
             }
 

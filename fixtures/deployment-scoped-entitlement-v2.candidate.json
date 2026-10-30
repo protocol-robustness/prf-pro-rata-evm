@@ -23,6 +23,61 @@
     "allocation_claim_leaf": "0x0488e43e0477c131a94e0502dafe92ccc1122e0c97d06b6e941a4d07a666f878",
     "allocation_claim_root": "0x97673b87e79f3ba61da9bb3b9afedcff339552318ff14270b271661f7f2cb6ac"
   },
+  "odd_width": {
+    "count": 3,
+    "total_amount_base_units": 10,
+    "openings": [
+      {
+        "index": 0,
+        "claim_identity": "0xf9453db1bf312ca83a4faf48daa94340693d2a4fc783609b06637a2fd15e226e",
+        "beneficiary": "0x000000000000000000000000000000000000a001",
+        "amount_base_units": 4,
+        "opening_salt": "0x8cc74bc5d62bedb562d9db744f675f6f17511d1fbda67060d97d6aba346dc904"
+      },
+      {
+        "index": 1,
+        "claim_identity": "0x32716d4060423b0169a8fcaec280e4cd71a68feb8e0d1bf1539fb1d254d33b5c",
+        "beneficiary": "0x000000000000000000000000000000000000a002",
+        "amount_base_units": 3,
+        "opening_salt": "0xad7b6b88034155f1e86d31a54d7723ede2183a6538ecab39ce7a7144ff280fcd"
+      },
+      {
+        "index": 2,
+        "claim_identity": "0xfb55d48dee2b3ffde6b8f8d7d5a3072e79c5483a9ee6b848fbc1667022683159",
+        "beneficiary": "0x000000000000000000000000000000000000a003",
+        "amount_base_units": 3,
+        "opening_salt": "0x7a5d8e65825a57020baadf484c031482b39cf6302a3ddf29cb80f1652561193b"
+      }
+    ],
+    "expected": {
+      "entitlement_leaves": [
+        "0x6c109d6e1122a446d0cda612d7264b63753098e57e17ddd793d89843f50019ad",
+        "0xe960e82cb77f7f33c56b89c350929ea18c7f6b0e5b026ee2f8bc689a3939e9a9",
+        "0x949169f0ee22608f2d8f4592ed7d829b6489ecc6a681d884610d1557c6cc32eb"
+      ],
+      "entitlement_pair_01": "0x5161c9390c879eef39e80712bfb4c054e10a0ae674315856f292a86594b196c6",
+      "entitlement_duplicate_last_node": "0xd25d7adc371871bcfca287107290b181a1611c9206aa517b8e2f3f5e371ac8d2",
+      "entitlement_members_root": "0x827f1d48aef2e7749c1413b6b9b9acc1f633b810c007c01ec4c93f3bdd0ae50e",
+      "entitlement_table_root": "0x0931b3deded45e67b33b2256180a31d00b59a410dbe28d6b02b55e0ef827573b",
+      "allocation_claim_leaves": [
+        "0x9ca274ed1690e596981208e9c6874948226a961f8df5b3acbcc1ac7882fbe63d",
+        "0x8760a02128d40542804a4d8bb1deec361cfbb556ca08a3ea8e4ff7894cf992d5",
+        "0x11fd1868293c8c92a0687d66ed618f6d10d2b81e90df121d9831633986ecc46d"
+      ],
+      "allocation_claim_pair_01": "0x1ec0653f7e63a06ba7624b47fa11dcf49bd220ad5286c2df5b37b8a807228436",
+      "allocation_claim_duplicate_last_node": "0xfb546ecfcc04c5760588875320c46efd4a0d9a76c9d4199814abd921b3c6b5d0",
+      "allocation_claim_members_root": "0xb7ddd2990fa5133fdab8752644d788ee3ff096a458685a7463c641f8dec9a92b",
+      "allocation_claim_root": "0x22eef8fa1133d27adeba08782b149f16a8df6cc55809f1a1adb2dce5ab2a50f4",
+      "index_2_entitlement_siblings": [
+        "0x949169f0ee22608f2d8f4592ed7d829b6489ecc6a681d884610d1557c6cc32eb",
+        "0x5161c9390c879eef39e80712bfb4c054e10a0ae674315856f292a86594b196c6"
+      ],
+      "index_2_allocation_claim_siblings": [
+        "0x11fd1868293c8c92a0687d66ed618f6d10d2b81e90df121d9831633986ecc46d",
+        "0x1ec0653f7e63a06ba7624b47fa11dcf49bd220ad5286c2df5b37b8a807228436"
+      ]
+    }
+  },
   "reproduction": "cast abi-encode followed by cast keccak; see README.md and test/ProRataEntitlementSettlementV2.t.sol",
   "qualification_note": "Do not consume as canonical until prf-pro-rata-allocation independently implements and approves the same profile and vectors."
 }

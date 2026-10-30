@@ -4,7 +4,7 @@ Independent Solidity implementation of a narrow pro-rata entitlement settlement 
 
 ## Current status
 
-This repository is a local implementation candidate. It is not released, deployed, or qualified. The new deployment-scoped claim profile is not yet adopted by `prf-pro-rata-allocation`; its commitment roots are candidate vectors pending cross-language review and matching canonical vectors from that owner.
+This repository is a local implementation candidate. It is not released, deployed, or qualified. The deployment-scoped claim profile remains unadopted. Its candidate roots and three-member odd-width tree are now independently reproduced by Clojure, Rust and Solidity tests; semantic adoption and deployment qualification remain separate decisions.
 
 The implementation is written independently. It does not import `prf-evm` contracts or implementation code.
 
@@ -34,7 +34,7 @@ The initial implementation has no proxy support, reserve, proof registry, or gov
 
 ## Candidate vector
 
-The `testCandidateGoldenRootsMatchIndependentCastEncoding` fixture uses fixed inputs and compares table and allocation roots against values computed independently with Foundry `cast abi-encode` and `cast keccak`. These are regression vectors for this candidate implementation, **not adopted canonical vectors**. Adoption requires the allocation/canonical owners to reproduce and approve the same values in their implementation languages.
+The candidate fixtures use fixed inputs and compare table and allocation roots against independently computed Foundry `cast abi-encode` and `cast keccak` values. The three-member fixture also checks leaves, ordered pairs, duplicate-last nodes, member roots, envelopes and proof siblings across Clojure, Rust and Solidity. These are regression vectors for this candidate implementation, **not adopted canonical vectors**. The profile remains subject to semantic-owner adoption; matching vectors do not authenticate the constructor-supplied genesis root or qualify a deployment.
 
 ## Checks
 
