@@ -43,4 +43,4 @@ forge fmt --check
 forge test
 ```
 
-The current tests cover deployment and asset substitution, the pre-activation Required-to-Requested downgrade case, exact-transfer rollback and retry, and pre-activation refund.
+The current tests cover substitution of the chain-instance root, chain ID, allocator, asset, operation, allocation binding, entitlement index and identity, beneficiary, amount, policy, proof floor and profile domain. They also reject a legacy source-bound V2 claim root, exercise a three-leaf odd-width Merkle proof (including rejection of an incorrect duplicate-last sibling), test the pre-activation Required-to-Requested downgrade case, exact-transfer rollback and retry, and pre-activation refund. These are candidate implementation tests; they do not authenticate the constructor-supplied genesis root or qualify a deployment.
